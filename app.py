@@ -56,6 +56,8 @@ def init_db():
             advance TEXT NOT NULL, updated_at TEXT NOT NULL,
             PRIMARY KEY (user_id, match_id))"""))
         c.execute(text("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)"))
+        c.execute(text("""CREATE TABLE IF NOT EXISTS login_fails (
+            name_key TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, locked_until TEXT)"""))
         for m in torneo.MATCHES:
             c.execute(text("""INSERT INTO matches (id, kickoff) VALUES (:id, :k)
                               ON CONFLICT (id) DO NOTHING"""), {"id": m["id"], "k": m["kickoff"]})
@@ -162,6 +164,47 @@ def standings(matches, users, preds):
 def name_key(name):
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]", "", s)
+
+
+def weak_pin(pin):
+    """PIN fáciles de adivinar: 0000, 1212, 1122, 1234, 4321, años, etc."""
+    d = [int(c) for c in pin]
+    steps = {d[i + 1] - d[i] for i in range(3)}
+    if steps in ({0}, {1}, {-1}):           # 1111, 1234, 4321
+        return True
+    if d[0] == d[2] and d[1] == d[3]:        # 1212
+        return True
+    if d[0] == d[1] and d[2] == d[3]:        # 1122
+        return True
+    if 1940 <= int(pin) <= 2030:             # años
+        return True
+    return pin in {"0007", "1004", "2580", "0852", "6969", "1357", "2468", "9999"}
+
+
+MAX_FAILS = 5
+LOCK_MINUTES = 15
+
+
+def lock_remaining(key):
+    """Minutos que le quedan de bloqueo a un nombre (0 si no está bloqueado)."""
+    r = q("SELECT locked_until FROM login_fails WHERE name_key = :k", k=key)
+    if not r or not r[0]["locked_until"]:
+        return 0
+    until = datetime.strptime(r[0]["locked_until"], "%Y-%m-%d %H:%M:%S")
+    secs = (until - now_art()).total_seconds()
+    return max(0, int(secs // 60) + 1) if secs > 0 else 0
+
+
+def register_fail(key):
+    r = q("SELECT fails FROM login_fails WHERE name_key = :k", k=key)
+    fails = (r[0]["fails"] if r else 0) + 1
+    until = None
+    if fails >= MAX_FAILS:
+        fails = 0
+        until = (now_art() + timedelta(minutes=LOCK_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+    q("""INSERT INTO login_fails (name_key, fails, locked_until) VALUES (:k, :f, :u)
+         ON CONFLICT (name_key) DO UPDATE SET fails = :f, locked_until = :u""", k=key, f=fails, u=until)
+    return until is not None
 
 
 def current_user():
@@ -292,6 +335,8 @@ def api_registro():
         return err("Elegí un ícono")
     if not re.fullmatch(r"\d{4}", pin):
         return err("El PIN tiene que ser de 4 números")
+    if weak_pin(pin):
+        return err("Ese PIN es muy fácil de adivinar (como 1234, 0000 o un año). Elegí otro.")
     if q("SELECT 1 FROM users WHERE name_key = :k", k=name_key(name)):
         return err("Ese nombre ya está anotado. Si sos vos, entrá con tu PIN.")
     r = q("""INSERT INTO users (name, name_key, icon, pin_hash, created_at)
@@ -306,9 +351,18 @@ def api_registro():
 @limiter.limit("8 per 10 minutes")
 def api_ingresar():
     d = body()
-    r = q("SELECT id, pin_hash FROM users WHERE name_key = :k", k=name_key(str(d.get("name", ""))))
-    if not r or not check_password_hash(r[0]["pin_hash"], str(d.get("pin", ""))):
+    key = name_key(str(d.get("name", "")))
+    mins = lock_remaining(key)
+    if mins:
+        return err(f"Demasiados PIN incorrectos para este nombre. Probá de nuevo en {mins} min.", 429)
+    r = q("SELECT id, pin_hash FROM users WHERE name_key = :k", k=key)
+    if not r:
         return err("Nombre o PIN incorrecto")
+    if not check_password_hash(r[0]["pin_hash"], str(d.get("pin", ""))):
+        if register_fail(key):
+            return err(f"Demasiados PIN incorrectos. Este nombre queda bloqueado {LOCK_MINUTES} min.", 429)
+        return err("Nombre o PIN incorrecto")
+    q("DELETE FROM login_fails WHERE name_key = :k", k=key)
     session.permanent = True
     session["uid"] = r[0]["id"]
     return jsonify({"ok": True})
@@ -520,6 +574,8 @@ def api_admin_usuario():
         if not re.fullmatch(r"\d{4}", pin):
             return err("El PIN tiene que ser de 4 números")
         q("UPDATE users SET pin_hash=:p WHERE id=:id", p=generate_password_hash(pin), id=uid)
+        # el nuevo PIN también desbloquea el nombre
+        q("DELETE FROM login_fails WHERE name_key = (SELECT name_key FROM users WHERE id=:id)", id=uid)
         return jsonify({"ok": True})
     return err("Acción inválida")
 

@@ -11,7 +11,7 @@
     });
     let j = {};
     try { j = await r.json(); } catch (_) { /* respuesta sin JSON */ }
-    if (r.status === 429) throw new Error('Demasiados intentos. Esperá unos minutos.');
+    if (r.status === 429) throw new Error(j.error || 'Demasiados intentos. Esperá unos minutos.');
     if (!r.ok || j.ok === false) throw new Error(j.error || 'Algo salió mal. Probá de nuevo.');
     return j;
   }
