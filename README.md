@@ -22,13 +22,12 @@ Abrir http://localhost:5000 · admin en http://localhost:5000/admin con la clave
 2. **Render:** New → Blueprint → elegir el repo. Crea la app y la base Postgres con `render.yaml`.
    - Te pide `ADMIN_KEY`: inventá una clave para el panel de admin.
    - `SECRET_KEY` y `SYNC_TOKEN` se generan solas.
-3. **GitHub Actions** (para la actualización automática): en el repo → Settings → Secrets and variables → Actions, crear:
-   - `PRODE_URL` = la URL de Render, ej. `https://prode-liga.onrender.com` (sin `/` al final)
-   - `SYNC_TOKEN` = el mismo valor que generó Render (Render → Environment)
+3. **GitHub Actions** (cada 10 min mantiene despierta la app y trae resultados): en el repo → Settings → Secrets and variables → Actions, crear el secreto
+   `SYNC_TOKEN` = el mismo valor que generó Render (Render → prode-liga → Environment).
 4. Pasar el link al grupo.
 
 ## Admin
 
 `/admin` con la `ADMIN_KEY`: traer resultados, cargar/corregir resultados a mano, fijar horarios de cuartos/semis/final, resetear PIN o borrar participantes. Logueado como admin, en la página principal aparece la barra con "Traer resultados".
 
-Notas: la base gratis de Render dura 30 días (alcanza hasta la final del 12/12). La app gratis "duerme" sin uso: el primer acceso puede tardar ~40 s.
+Notas: la base gratis de Render dura 30 días (alcanza hasta la final del 12/12). La app gratis "duerme" a los 15 min sin uso; el workflow la despierta cada 10 min para evitarlo.

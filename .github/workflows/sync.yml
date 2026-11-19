@@ -1,19 +1,28 @@
-name: Traer resultados de Promiedos
+name: Mantener despierta y traer resultados
 
 on:
   schedule:
-    # cada 30 minutos (hora UTC). GitHub puede demorarlo algunos minutos.
-    - cron: "*/30 * * * *"
+    # cada 10 minutos (Render duerme la app gratis a los 15 min sin visitas).
+    # GitHub puede demorarlo algunos minutos.
+    - cron: "*/10 * * * *"
   workflow_dispatch:
+
+env:
+  PRODE_URL: https://prode-liga.onrender.com
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Despertar la app y sincronizar
+      - name: Despertar la app
+        run: curl -fsS --retry 4 --retry-delay 20 --max-time 90 "$PRODE_URL/health"
+
+      - name: Traer resultados de Promiedos
         env:
-          PRODE_URL: ${{ secrets.PRODE_URL }}
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
-          curl -fsS --retry 4 --retry-delay 20 --max-time 90 "$PRODE_URL/health" > /dev/null
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "Falta el secreto SYNC_TOKEN: solo se mantuvo despierta la app."
+            exit 0
+          fi
           curl -fsS --max-time 90 -X POST -H "X-Sync-Token: $SYNC_TOKEN" "$PRODE_URL/api/sync"
