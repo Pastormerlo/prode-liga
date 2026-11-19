@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, tname, pts_chip %}
+{% block body %}
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/">
+      <span class="brand-ball">⚽</span>
+      <span><strong>{{ t.TITULO }}</strong><small>{{ t.SUBTITULO }}</small></span>
+    </a>
+    <div class="top-right">
+      {% if me %}
+      <button class="me-chip" id="btn-me" aria-haspopup="true">
+        <span class="me-icon">{{ me.icon }}</span><span class="me-name">{{ me.name }}</span>
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  <nav class="tabs wrap" role="tablist">
+    <a href="#pronosticos" role="tab" data-tab="pronosticos">Pronósticos{% if me and pending %}<span class="dot">{{ pending }}</span>{% endif %}</a>
+    <a href="#cuadro" role="tab" data-tab="cuadro">Cuadro</a>
+    <a href="#tabla" role="tab" data-tab="tabla">Tabla</a>
+    <a href="#reglas" role="tab" data-tab="reglas">Reglas</a>
+  </nav>
+</header>
+{% if admin %}
+<div class="adminbar wrap">
+  <span class="chip">Modo admin</span>
+  <button class="btn sm primary" id="btn-sync" title="Leer resultados de Promiedos">↻ Traer resultados</button>
+  <a class="btn sm ghost" href="/admin">Panel</a>
+</div>
+{% endif %}
+
+{% if me %}
+<div class="menu" id="me-menu" hidden>
+  <p class="menu-title">Cambiar ícono</p>
+  <div class="icons small">
+    {% for ic in t.ICONS %}<button type="button" class="ic{% if ic == me.icon %} on{% endif %}" data-set-icon="{{ ic }}">{{ ic }}</button>{% endfor %}
+  </div>
+  <button class="btn ghost full" id="btn-logout">Salir de esta cuenta</button>
+</div>
+{% endif %}
+
+<main class="wrap">
+
+<!-- ======================= PRONÓSTICOS ======================= -->
+<section id="tab-pronosticos" class="tab-panel">
+  {% if not me %}
+  <div class="card join" id="join">
+    <div class="join-tabs">
+      <button class="on" data-join="nuevo">Me sumo</button>
+      <button data-join="volver">Ya me anoté</button>
+    </div>
+    <form id="form-nuevo" class="join-form" autocomplete="off">
+      <h2>Sumate al prode</h2>
+      <p class="muted">Poné tu nombre, elegí un ícono y un PIN de 4 números. Con eso entrás desde cualquier celular.</p>
+      <label>Tu nombre<input name="name" maxlength="20" required placeholder="Ej: Mauro" autocomplete="nickname"></label>
+      <span class="lbl">Tu ícono</span>
+      <div class="icons" id="icon-pick">
+        {% for ic in t.ICONS %}<button type="button" class="ic{% if loop.first %} on{% endif %}" data-icon="{{ ic }}" aria-label="Ícono {{ ic }}">{{ ic }}</button>{% endfor %}
+      </div>
+      <label>PIN (4 números)<input name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" required placeholder="••••" class="pin"></label>
+      <button class="btn primary full" type="submit">Entrar al prode</button>
+      <p class="form-msg" aria-live="polite"></p>
+    </form>
+    <form id="form-volver" class="join-form" hidden autocomplete="off">
+      <h2>Volver a entrar</h2>
+      <p class="muted">Usá el mismo nombre y PIN con el que te anotaste.</p>
+      <label>Tu nombre<input name="name" maxlength="20" required></label>
+      <label>PIN<input name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" required class="pin" placeholder="••••"></label>
+      <button class="btn primary full" type="submit">Entrar</button>
+      <p class="form-msg" aria-live="polite"></p>
+    </form>
+  </div>
+  {% else %}
+  <div class="mystats">
+    <div><span class="big">{{ my_row.pts if my_row else 0 }}</span><small>puntos</small></div>
+    <div><span class="big">{{ my_row.pos if my_row else '-' }}°</span><small>de {{ tabla|length }}</small></div>
+    <div><span class="big">{{ my_row.exactos if my_row else 0 }}</span><small>exactos</small></div>
+    <div><span class="big {% if pending %}warn{% endif %}">{{ pending }}</span><small>por cargar</small></div>
+  </div>
+  {% endif %}
+
+  {% for r in rounds %}
+  <div class="round">
+    <div class="round-head">
+      <h2>{{ r.name }}</h2>
+      <span class="muted">{{ r.when }}</span>
+    </div>
+    <div class="grid">
+    {% for m in r.matches %}
+      {% set mine = m.mine %}
+      {% set can_edit = me and m.open %}
+      <article class="match{% if m.final %} is-final{% elif m.status == 'en_juego' %} is-live{% elif m.locked %} is-locked{% elif not m.ready %} is-tbd{% endif %}{% if can_edit and not mine %} needs{% endif %}"
+               data-id="{{ m.id }}" {% if m.kickoff_iso %}data-kickoff="{{ m.kickoff_iso }}"{% endif %}>
+        <div class="m-head">
+          <span class="m-num">P{{ m.id }}</span>
+          <span class="m-when">{{ m.kickoff_txt }}</span>
+          <span class="m-state">
+            {%- if m.final %}<span class="chip">Final</span>
+            {%- elif m.status == 'en_juego' %}<span class="chip live">● {{ m.minute or 'En juego' }}</span>
+            {%- elif m.locked %}<span class="chip">🔒 Cerrado</span>
+            {%- elif not m.ready %}<span class="chip ghost">A definir</span>
+            {%- elif m.kickoff_iso %}<span class="chip ghost countdown" data-until="{{ m.kickoff_iso }}">Abierto</span>
+            {%- else %}<span class="chip ghost">Abierto</span>{% endif -%}
+          </span>
+        </div>
+
+        <div class="m-body">
+          <div class="team{% if m.final and m.advance == 'a' %} won{% endif %}">
+            {{ badge(m.team_a) }}<span class="tname">{{ tname(m, 'a') }}</span>
+          </div>
+          <div class="score">
+            {% if can_edit %}
+              <div class="stepper" data-side="a">
+                <button type="button" class="st up" aria-label="Más goles {{ tname(m,'a') }}">+</button>
+                <input type="number" min="0" max="20" inputmode="numeric" value="{{ mine.goals_a if mine and not m.mine_stale else '' }}" placeholder="–" aria-label="Goles {{ tname(m,'a') }}">
+                <button type="button" class="st down" aria-label="Menos goles {{ tname(m,'a') }}">−</button>
+              </div>
+              <span class="dash">:</span>
+              <div class="stepper" data-side="b">
+                <button type="button" class="st up" aria-label="Más goles {{ tname(m,'b') }}">+</button>
+                <input type="number" min="0" max="20" inputmode="numeric" value="{{ mine.goals_b if mine and not m.mine_stale else '' }}" placeholder="–" aria-label="Goles {{ tname(m,'b') }}">
+                <button type="button" class="st down" aria-label="Menos goles {{ tname(m,'b') }}">−</button>
+              </div>
+            {% elif m.status in ('final', 'en_juego') %}
+              <span class="real">{{ m.goals_a }}<span class="dash">:</span>{{ m.goals_b }}</span>
+            {% else %}
+              <span class="vs">vs</span>
+            {% endif %}
+          </div>
+          <div class="team{% if m.final and m.advance == 'b' %} won{% endif %}">
+            {{ badge(m.team_b) }}<span class="tname">{{ tname(m, 'b') }}</span>
+          </div>
+        </div>
+
+        {% if m.final %}
+          <p class="m-note">Pasa <strong>{{ m['team_' ~ m.advance].short }}</strong>
+            {%- if m.pens_a is not none %} · penales {{ m.pens_a }}-{{ m.pens_b }}
+            {%- elif m.goals_a == m.goals_b %} · en alargue/penales{% endif %}
+          </p>
+        {% endif %}
+
+        {% if can_edit %}
+          <div class="tie"{% if not (mine and not m.mine_stale and mine.goals_a == mine.goals_b) %} hidden{% endif %}>
+            <span>Empate en los 90'. ¿Quién pasa?</span>
+            <div class="tie-opts">
+              <button type="button" data-adv="a" class="{% if mine and mine.advance == 'a' and not m.mine_stale %}on{% endif %}">{{ tname(m,'a') }}</button>
+              <button type="button" data-adv="b" class="{% if mine and mine.advance == 'b' and not m.mine_stale %}on{% endif %}">{{ tname(m,'b') }}</button>
+            </div>
+          </div>
+          <div class="m-actions">
+            <span class="save-msg">{% if mine and not m.mine_stale %}✓ Guardado{% elif m.mine_stale %}⚠ Cambiaron los equipos: volvé a cargarlo{% endif %}</span>
+            <button type="button" class="btn sm primary save" {% if mine and not m.mine_stale %}hidden{% endif %}>Guardar</button>
+          </div>
+        {% elif me and mine and m.locked %}
+          <div class="m-mine">
+            <span>Tu pronóstico: <strong>{{ mine.goals_a }}-{{ mine.goals_b }}</strong>
+              {%- if mine.goals_a == mine.goals_b and not m.mine_stale %} (pasa {{ m['team_' ~ mine.advance].short }}){% endif %}</span>
+            {{ pts_chip(m.mine_score) }}
+            {% if m.final and not m.mine_score %}<span class="chip ghost">0</span>{% endif %}
+          </div>
+        {% elif me and m.locked and m.ready %}
+          <div class="m-mine muted">No cargaste pronóstico para este partido.</div>
+        {% elif not me and m.open %}
+          <div class="m-mine muted">Anotate arriba para pronosticar.</div>
+        {% endif %}
+
+        {% if m.others %}
+        <details class="others">
+          <summary>Pronósticos de todos ({{ m.others|length }})</summary>
+          <ul>
+          {% for o in m.others %}
+            <li><span class="o-who">{{ o.icon }} {{ o.name }}</span>
+                <span class="o-pred">{{ o.goals_a }}-{{ o.goals_b }}{% if o.goals_a == o.goals_b and m['team_' ~ o.advance] %} <small>({{ m['team_' ~ o.advance].abbr }})</small>{% endif %}</span>
+                {{ pts_chip(o.score) }}</li>
+          {% endfor %}
+          </ul>
+        </details>
+        {% elif m.ready and not m.locked and m.n_preds %}
+          <p class="m-foot muted">{{ m.n_preds }} pronóstico{{ 's' if m.n_preds != 1 }} cargado{{ 's' if m.n_preds != 1 }} · se ven al empezar el partido</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<!-- ======================= CUADRO ======================= -->
+<section id="tab-cuadro" class="tab-panel" hidden>
+  <div class="bracket-scroll">
+    <div class="bracket">
+      {% for r in rounds %}
+      <div class="b-col">
+        <h3>{{ r.name }}</h3>
+        <div class="b-games">
+        {% for m in r.matches %}
+          <div class="b-game{% if m.final %} done{% endif %}">
+            {% for side in ('a', 'b') %}
+            <div class="b-team{% if m.final and m.advance == side %} won{% elif m.final %} lost{% endif %}">
+              {{ badge(m['team_' ~ side], 'xs') }}
+              <span class="b-name">{{ tname(m, side) }}</span>
+              <span class="b-score">{% if m.status in ('final','en_juego') %}{{ m['goals_' ~ side] }}{% if m.pens_a is not none %}<sup>({{ m['pens_' ~ side] }})</sup>{% endif %}{% endif %}</span>
+            </div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      <div class="b-col champ">
+        <h3>Campeón</h3>
+        <div class="b-games">
+          {% set f = matches[15] %}
+          <div class="trophy">🏆
+            <strong>{{ f['team_' ~ f.advance].short if f.final else 'A definir' }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="muted center">Deslizá para ver todo el cuadro →</p>
+</section>
+
+<!-- ======================= TABLA ======================= -->
+<section id="tab-tabla" class="tab-panel" hidden>
+  {% if tabla %}
+  <div class="card table-card">
+    <table class="standings">
+      <thead><tr><th>#</th><th class="l">Jugador</th><th title="Resultados exactos">Ex</th><th title="Aciertos de quién pasa">Pasa</th><th>Pts</th></tr></thead>
+      <tbody>
+      {% for r in tabla %}
+        <tr class="{% if me and r.id == me.id %}me{% endif %}">
+          <td class="pos">{% if r.pts and r.pos == 1 %}🥇{% elif r.pts and r.pos == 2 %}🥈{% elif r.pts and r.pos == 3 %}🥉{% else %}{{ r.pos }}{% endif %}</td>
+          <td class="l"><span class="t-icon">{{ r.icon }}</span>{{ r.name }}</td>
+          <td>{{ r.exactos }}</td>
+          <td>{{ r.pasa }}</td>
+          <td class="t-pts">{{ r.pts }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted center">Desempate: más exactos, después más aciertos de quién pasa.</p>
+  {% else %}
+  <div class="card empty">Todavía no se anotó nadie. ¡Pasá el link al grupo!</div>
+  {% endif %}
+  {% if last_sync %}<p class="muted center small">Resultados actualizados desde Promiedos: {{ last_sync[:16] }}</p>{% endif %}
+</section>
+
+<!-- ======================= REGLAS ======================= -->
+<section id="tab-reglas" class="tab-panel" hidden>
+  <div class="card rules">
+    <h2>Cómo se juega</h2>
+    <ol>
+      <li>Para cada partido pronosticás el <strong>resultado de los 90'</strong> (sin alargue ni penales).</li>
+      <li>Si ponés empate, elegís <strong>quién pasa</strong> de ronda (por alargue o penales).</li>
+      <li>Podés cambiar tu pronóstico hasta la <strong>hora de inicio</strong> del partido. Ahí se cierra y se ven los pronósticos de todos.</li>
+      <li>Los cruces de cuartos, semis y final se habilitan solos cuando se conocen los equipos.</li>
+    </ol>
+    <h3>Puntaje por partido</h3>
+    <div class="pts-grid">
+      <div><span class="chip pts p3">+{{ t.PTS_EXACTO }}</span> Resultado exacto</div>
+      <div><span class="chip pts p1">+{{ t.PTS_TENDENCIA }}</span> Acertás ganador o empate, sin el marcador</div>
+      <div><span class="chip pts p1">+{{ t.PTS_PASA }}</span> Extra por acertar quién pasa</div>
+    </div>
+    <p class="muted">Ejemplo: pronosticás River 2-1 y sale 2-1 → 3 + 1 = <strong>4 puntos</strong>. Si sale 1-0 → 1 + 1 = 2 puntos.
+      Si pronosticás 1-1 pasa River, sale 0-0 y River gana por penales → 1 + 1 = 2 puntos.</p>
+    <p class="muted">Cuadro: P1 vs P2, P3 vs P4, P5 vs P6 y P7 vs P8 en cuartos. Final única el sábado 12/12 en La Plata.</p>
+  </div>
+</section>
+
+</main>
+<footer class="wrap foot muted">Resultados: Promiedos · Para los partidos</footer>
+{% endblock %}
