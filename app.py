@@ -364,6 +364,24 @@ def api_pronostico():
 
 
 # ---------------------------------------------------------------- sincronización
+def kickoff_offset(games):
+    """Promiedos devuelve los horarios en la zona del país desde donde se
+    consulta (Render está en EE.UU.). Se compara con los horarios de octavos
+    conocidos (hora argentina) para obtener la diferencia y corregir el resto."""
+    seed = {}
+    for m in torneo.MATCHES:
+        if m["round"] == "8vos" and m["kickoff"]:
+            pa, pb = torneo.TEAMS[m["a"]]["pid"], torneo.TEAMS[m["b"]]["pid"]
+            seed[(pa, pb)] = seed[(pb, pa)] = datetime.strptime(m["kickoff"], "%Y-%m-%d %H:%M")
+    deltas = []
+    for g in games:
+        if g["kickoff"] and g["pids"] in seed:
+            deltas.append(seed[g["pids"]] - datetime.strptime(g["kickoff"], "%Y-%m-%d %H:%M"))
+    if not deltas:
+        return None
+    return max(set(deltas), key=deltas.count)  # la diferencia más repetida
+
+
 def run_sync():
     games = promiedos.fetch_games()
     matches = build_matches()
@@ -373,6 +391,7 @@ def run_sync():
             by_pids[(m["team_a"]["pid"], m["team_b"]["pid"])] = (m, False)
             by_pids[(m["team_b"]["pid"], m["team_a"]["pid"])] = (m, True)
     changes = []
+    offset = kickoff_offset(games)
     # Se procesa en orden de ronda: si termina un partido de octavos, el cruce
     # de cuartos recién se conoce en la próxima corrida (o en el mismo botón,
     # que corre dos pasadas).
@@ -382,8 +401,10 @@ def run_sync():
             continue
         m, swapped = hit
         upd = {}
-        if g["kickoff"] and not m["kickoff_manual"] and g["kickoff"] != m["kickoff"]:
-            upd["kickoff"] = g["kickoff"]
+        if g["kickoff"] and offset is not None and not m["kickoff_manual"]:
+            fixed = (datetime.strptime(g["kickoff"], "%Y-%m-%d %H:%M") + offset).strftime("%Y-%m-%d %H:%M")
+            if fixed != m["kickoff"]:
+                upd["kickoff"] = fixed
         if not m["result_manual"] and g["status"] != "pendiente":
             ga, gb = g["goals"] if not swapped else (g["goals"][1], g["goals"][0])
             pens = g["pens"]
