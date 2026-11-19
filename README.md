@@ -28,6 +28,6 @@ Abrir http://localhost:5000 · admin en http://localhost:5000/admin con la clave
 
 ## Admin
 
-`/admin` con la `ADMIN_KEY`: traer resultados, cargar/corregir resultados a mano, fijar horarios de cuartos/semis/final, resetear PIN o borrar participantes. Logueado como admin, en la página principal aparece la barra con "Traer resultados".
+`/admin` con la `ADMIN_KEY`: crear grupos (cada uno con su tabla, su link `/g/nombre` y clave opcional para anotarse), traer resultados, cargar/corregir resultados a mano, fijar horarios de cuartos/semis/final, resetear PIN o borrar participantes. Logueado como admin, en la página principal aparece la barra con "Traer resultados".
 
 Notas: la base gratis de Render dura 30 días (alcanza hasta la final del 12/12). La app gratis "duerme" a los 15 min sin uso; el workflow la despierta cada 10 min para evitarlo.

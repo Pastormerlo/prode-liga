@@ -4,9 +4,9 @@
 {% block body %}
 <header class="top">
   <div class="wrap top-in">
-    <a class="brand" href="/"><span class="brand-ball">⚽</span><span><strong>Admin</strong><small>{{ t.TITULO }}</small></span></a>
+    <a class="brand" href="/?todos=1"><span class="brand-ball">⚽</span><span><strong>Admin</strong><small>{{ t.TITULO }}</small></span></a>
     <div class="top-right">
-      <a class="btn sm ghost" href="/">Ver prode</a>
+      <a class="btn sm ghost" href="/?todos=1">Ver prode</a>
       <a class="btn sm ghost" href="/admin/salir">Salir</a>
     </div>
   </div>
@@ -63,9 +63,35 @@
   </div>
 
   <div class="card">
-    <h2>Participantes ({{ users|length }})</h2>
+    <h2>Grupos y participantes</h2>
+    <p class="muted">Cada grupo juega por separado, con su propia tabla. Si le ponés clave, para anotarse hay que escribirla (los que ya están anotados entran con su PIN).
+      Dejá la clave vacía para que cualquiera pueda sumarse.</p>
+    <form id="form-grupo" autocomplete="off">
+      <label class="small">Nombre del grupo nuevo<input name="name" maxlength="30" required placeholder="Ej: Laburo"></label>
+      <label class="small">Clave (opcional)<input name="clave" maxlength="30" placeholder="Ej: tribuna"></label>
+      <button class="btn primary" type="submit">Crear grupo</button>
+    </form>
+  </div>
+
+  {% for gr in groups %}
+  <div class="card">
     <div class="admin-list">
-    {% for u in users %}
+      <div class="admin-row group" data-gid="{{ gr.id }}">
+        <div class="ar-title"><strong>{% if gr.clave %}🔒 {% endif %}{{ gr.name }}</strong>
+          <span class="chip ghost">/g/{{ gr.slug }}</span>
+          <span class="muted small">{{ gr.users|length }} participante{{ 's' if gr.users|length != 1 }}</span></div>
+        <div class="g-fields">
+          <label class="small">Nombre<input class="g-name" maxlength="30" value="{{ gr.name }}"></label>
+          <label class="small">Clave para anotarse<input class="g-clave" maxlength="30" value="{{ gr.clave or '' }}" placeholder="Sin clave"></label>
+        </div>
+        <div class="ar-ctrl">
+          <button class="btn sm primary" data-act="save-group">Guardar</button>
+          <a class="btn sm ghost" href="{{ url_for('grupo', slug=gr.slug) }}">Abrir</a>
+          <button class="btn sm ghost" data-act="copy-link" data-link="{{ url_for('grupo', slug=gr.slug) }}">Copiar link</button>
+          {% if groups|length > 1 %}<button class="btn sm danger" data-act="delete-group">Borrar grupo</button>{% endif %}
+        </div>
+      </div>
+    {% for u in gr.users %}
       <div class="admin-row user" data-uid="{{ u.id }}">
         <span>{{ u.icon }} <strong>{{ u.name }}</strong> <span class="muted small">· {{ u.n }} pronósticos</span></span>
         <span class="ar-ctrl">
@@ -74,9 +100,10 @@
         </span>
       </div>
     {% else %}
-      <p class="muted">Nadie todavía.</p>
+      <p class="muted">Nadie anotado todavía.</p>
     {% endfor %}
     </div>
   </div>
+  {% endfor %}
 </main>
 {% endblock %}

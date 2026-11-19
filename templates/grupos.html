@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/?todos=1">
+      <span class="brand-ball">⚽</span>
+      <span><strong>{{ t.TITULO }}</strong><small>{{ t.SUBTITULO }}</small></span>
+    </a>
+    <div class="top-right">
+      {% if admin %}<a class="btn sm ghost" href="/admin">Panel</a>{% endif %}
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <div class="round-head"><h2>Elegí tu grupo</h2></div>
+  <p class="muted">Cada grupo tiene su propia tabla y sus pronósticos. Si un grupo tiene 🔒, para anotarte necesitás la clave que te pasa quien lo armó.</p>
+  <div class="group-list">
+    {% for gr in groups %}
+    <a class="card group-card{% if gr.id in mine_ids %} mine{% endif %}" href="{{ url_for('grupo', slug=gr.slug) }}">
+      <span class="g-title">{% if gr.clave %}🔒 {% endif %}{{ gr.name }}</span>
+      <span class="muted small">{{ gr.n }} participante{{ 's' if gr.n != 1 }}</span>
+      {% if gr.id in mine_ids %}<span class="chip">Estás anotado</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</main>
+<footer class="wrap foot muted">Resultados: Promiedos · Para los partidos</footer>
+{% endblock %}

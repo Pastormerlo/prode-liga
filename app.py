@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import promiedos
@@ -42,8 +42,11 @@ IS_PG = engine.dialect.name == "postgresql"
 def init_db():
     pk = "SERIAL PRIMARY KEY" if IS_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
     with engine.begin() as c:
+        c.execute(text(f"""CREATE TABLE IF NOT EXISTS groups (
+            id {pk}, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+            clave TEXT, created_at TEXT NOT NULL)"""))
         c.execute(text(f"""CREATE TABLE IF NOT EXISTS users (
-            id {pk}, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE,
+            id {pk}, group_id INTEGER, name TEXT NOT NULL, name_key TEXT NOT NULL,
             icon TEXT NOT NULL, pin_hash TEXT NOT NULL, created_at TEXT NOT NULL)"""))
         c.execute(text("""CREATE TABLE IF NOT EXISTS matches (
             id INTEGER PRIMARY KEY, kickoff TEXT, kickoff_manual INTEGER DEFAULT 0,
@@ -61,9 +64,6 @@ def init_db():
         for m in torneo.MATCHES:
             c.execute(text("""INSERT INTO matches (id, kickoff) VALUES (:id, :k)
                               ON CONFLICT (id) DO NOTHING"""), {"id": m["id"], "k": m["kickoff"]})
-
-
-init_db()
 
 
 def q(sql, **p):
@@ -87,6 +87,34 @@ def set_meta(k, v):
 def get_meta(k):
     r = q("SELECT v FROM meta WHERE k = :k", k=k)
     return r[0]["v"] if r else None
+
+
+def migrate_groups():
+    """Antes había un solo prode: los que ya estaban anotados pasan al grupo "Amigos"."""
+    if not q("SELECT 1 FROM groups"):
+        q("INSERT INTO groups (slug, name, clave, created_at) VALUES ('amigos', 'Amigos', NULL, :c)", c=stamp())
+    cols = [c["name"] for c in inspect(engine).get_columns("users")]
+    if "group_id" not in cols:
+        if IS_PG:
+            q("ALTER TABLE users ADD COLUMN group_id INTEGER")
+            q("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_name_key_key")
+        else:  # SQLite no puede borrar un UNIQUE: se rearma la tabla
+            with engine.begin() as c:
+                c.execute(text("ALTER TABLE users RENAME TO users_old"))
+                c.execute(text("""CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER, name TEXT NOT NULL,
+                    name_key TEXT NOT NULL, icon TEXT NOT NULL, pin_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL)"""))
+                c.execute(text("""INSERT INTO users (id, name, name_key, icon, pin_hash, created_at)
+                                  SELECT id, name, name_key, icon, pin_hash, created_at FROM users_old"""))
+                c.execute(text("DROP TABLE users_old"))
+    first = q("SELECT MIN(id) AS id FROM groups")[0]["id"]
+    q("UPDATE users SET group_id = :g WHERE group_id IS NULL", g=first)
+    q("CREATE UNIQUE INDEX IF NOT EXISTS users_group_name ON users (group_id, name_key)")
+
+
+init_db()
+migrate_groups()
 
 
 # ---------------------------------------------------------------- cuadro
@@ -207,15 +235,69 @@ def register_fail(key):
     return until is not None
 
 
-def current_user():
-    uid = session.get("uid")
+# ---------------------------------------------------------------- grupos
+def slugify(name):
+    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")[:30] or "grupo"
+
+
+def get_group(slug):
+    r = q("SELECT * FROM groups WHERE slug = :s", s=slug)
+    return r[0] if r else None
+
+
+def all_groups():
+    return q("""SELECT g.id, g.slug, g.name, g.clave, COUNT(u.id) AS n
+                FROM groups g LEFT JOIN users u ON u.group_id = g.id
+                GROUP BY g.id, g.slug, g.name, g.clave ORDER BY g.name""")
+
+
+def clave_ok(g, clave):
+    want = (g["clave"] or "").strip().lower()
+    return not want or secrets.compare_digest(str(clave or "").strip().lower(), want)
+
+
+def my_uids():
+    """Un mismo celular puede estar anotado en varios grupos: {id_grupo: id_usuario}."""
+    uids = dict(session.get("uids") or {})
+    old = session.pop("uid", None)  # sesiones de antes de que existieran los grupos
+    if old:
+        r = q("SELECT group_id FROM users WHERE id = :id", id=old)
+        if r:
+            uids[str(r[0]["group_id"])] = old
+        session["uids"] = uids
+    return uids
+
+
+def login_user(gid, uid):
+    uids = my_uids()
+    uids[str(gid)] = uid
+    session["uids"] = uids
+    session.permanent = True
+
+
+def logout_user(gid):
+    uids = my_uids()
+    uids.pop(str(gid), None)
+    session["uids"] = uids
+
+
+def current_user(g):
+    uid = my_uids().get(str(g["id"]))
     if not uid:
         return None
-    r = q("SELECT id, name, icon FROM users WHERE id = :id", id=uid)
+    r = q("SELECT id, name, icon FROM users WHERE id = :id AND group_id = :g", id=uid, g=g["id"])
     if not r:
-        session.pop("uid", None)
+        logout_user(g["id"])
         return None
     return r[0]
+
+
+def body_group():
+    g = get_group(str(body().get("group", "")))
+    if not g:
+        abort(404)
+    return g
 
 
 def is_admin():
@@ -247,11 +329,30 @@ def err(msg, code=400):
 # ---------------------------------------------------------------- páginas
 @app.route("/")
 def index():
-    me = current_user()
+    groups = all_groups()
+    mine = [g for g in groups if str(g["id"]) in my_uids()]
+    if len(groups) == 1:
+        return redirect(url_for("grupo", slug=groups[0]["slug"]))
+    if len(mine) == 1 and not request.args.get("todos"):
+        return redirect(url_for("grupo", slug=mine[0]["slug"]))
+    mine_ids = {g["id"] for g in mine}
+    return render_template("grupos.html", t=torneo, groups=groups, mine_ids=mine_ids,
+                           admin=is_admin(), csrf=csrf_token())
+
+
+@app.route("/g/<slug>")
+def grupo(slug):
+    g = get_group(slug)
+    if not g:
+        return redirect(url_for("index", todos=1))
+    me = current_user(g)
+    admin = is_admin()
+    can_view = bool(me or admin or not g["clave"])
     matches = build_matches()
-    users = q("SELECT id, name, icon FROM users")
-    preds = q("SELECT * FROM predictions")
-    tabla = standings(matches, users, preds)
+    users = q("SELECT id, name, icon FROM users WHERE group_id = :g", g=g["id"])
+    preds = q("""SELECT p.* FROM predictions p JOIN users u ON u.id = p.user_id
+                 WHERE u.group_id = :g""", g=g["id"])
+    tabla = standings(matches, users, preds) if can_view else []
     user_by_id = {u["id"]: u for u in users}
 
     by_match = {}
@@ -265,7 +366,7 @@ def index():
             m["mine_score"] = score_pred(m["mine"], m)
             m["mine_stale"] = (m["mine"]["team_a"] != m["key_a"] or m["mine"]["team_b"] != m["key_b"])
         m["others"] = []
-        if m["locked"]:
+        if m["locked"] and can_view:
             for p in lst:
                 u = user_by_id.get(p["user_id"])
                 if u:
@@ -280,8 +381,9 @@ def index():
 
     pending = sum(1 for m in matches.values() if m["open"] and not m.get("mine"))
     return render_template(
-        "index.html", t=torneo, me=me, admin=is_admin(), rounds=rounds, tabla=tabla,
-        matches=matches, pending=pending, csrf=csrf_token(),
+        "index.html", t=torneo, g=g, me=me, admin=admin, can_view=can_view, rounds=rounds,
+        tabla=tabla, matches=matches, pending=pending, csrf=csrf_token(),
+        n_groups=len(q("SELECT id FROM groups")),
         last_sync=get_meta("last_sync"), my_row=next((r for r in tabla if me and r["id"] == me["id"]), None),
     )
 
@@ -300,10 +402,13 @@ def admin():
     if not is_admin():
         return render_template("admin_login.html", t=torneo, error=error)
     matches = build_matches()
-    users = q("""SELECT u.id, u.name, u.icon, u.created_at, COUNT(p.match_id) AS n
+    users = q("""SELECT u.id, u.name, u.icon, u.created_at, u.group_id, COUNT(p.match_id) AS n
                  FROM users u LEFT JOIN predictions p ON p.user_id = u.id
-                 GROUP BY u.id, u.name, u.icon, u.created_at ORDER BY u.name""")
-    return render_template("admin.html", t=torneo, matches=matches.values(), users=users,
+                 GROUP BY u.id, u.name, u.icon, u.created_at, u.group_id ORDER BY u.name""")
+    groups = all_groups()
+    for gr in groups:
+        gr["users"] = [u for u in users if u["group_id"] == gr["id"]]
+    return render_template("admin.html", t=torneo, matches=matches.values(), groups=groups,
                            csrf=csrf_token(), last_sync=get_meta("last_sync"),
                            last_sync_msg=get_meta("last_sync_msg"))
 
@@ -323,10 +428,13 @@ def health():
 @app.post("/api/registro")
 @limiter.limit("10 per hour")
 def api_registro():
+    g = body_group()
     d = body()
     name = re.sub(r"\s+", " ", str(d.get("name", ""))).strip()
     icon = str(d.get("icon", ""))
     pin = str(d.get("pin", ""))
+    if not clave_ok(g, d.get("clave")):
+        return err("La clave del grupo no es correcta. Pedísela a quien armó el grupo.")
     if not 2 <= len(name) <= 20:
         return err("El nombre tiene que tener entre 2 y 20 letras")
     if not name_key(name):
@@ -337,25 +445,26 @@ def api_registro():
         return err("El PIN tiene que ser de 4 números")
     if weak_pin(pin):
         return err("Ese PIN es muy fácil de adivinar (como 1234, 0000 o un año). Elegí otro.")
-    if q("SELECT 1 FROM users WHERE name_key = :k", k=name_key(name)):
-        return err("Ese nombre ya está anotado. Si sos vos, entrá con tu PIN.")
-    r = q("""INSERT INTO users (name, name_key, icon, pin_hash, created_at)
-             VALUES (:n, :k, :i, :p, :c) RETURNING id""",
-          n=name, k=name_key(name), i=icon, p=generate_password_hash(pin), c=stamp())
-    session.permanent = True
-    session["uid"] = r[0]["id"]
+    if q("SELECT 1 FROM users WHERE group_id = :g AND name_key = :k", g=g["id"], k=name_key(name)):
+        return err("Ese nombre ya está anotado en este grupo. Si sos vos, entrá con tu PIN.")
+    r = q("""INSERT INTO users (group_id, name, name_key, icon, pin_hash, created_at)
+             VALUES (:g, :n, :k, :i, :p, :c) RETURNING id""",
+          g=g["id"], n=name, k=name_key(name), i=icon, p=generate_password_hash(pin), c=stamp())
+    login_user(g["id"], r[0]["id"])
     return jsonify({"ok": True})
 
 
 @app.post("/api/ingresar")
 @limiter.limit("8 per 10 minutes")
 def api_ingresar():
+    g = body_group()
     d = body()
-    key = name_key(str(d.get("name", "")))
+    nk = name_key(str(d.get("name", "")))
+    key = f"{g['id']}:{nk}"
     mins = lock_remaining(key)
     if mins:
         return err(f"Demasiados PIN incorrectos para este nombre. Probá de nuevo en {mins} min.", 429)
-    r = q("SELECT id, pin_hash FROM users WHERE name_key = :k", k=key)
+    r = q("SELECT id, pin_hash FROM users WHERE group_id = :g AND name_key = :k", g=g["id"], k=nk)
     if not r:
         return err("Nombre o PIN incorrecto")
     if not check_password_hash(r[0]["pin_hash"], str(d.get("pin", ""))):
@@ -363,20 +472,19 @@ def api_ingresar():
             return err(f"Demasiados PIN incorrectos. Este nombre queda bloqueado {LOCK_MINUTES} min.", 429)
         return err("Nombre o PIN incorrecto")
     q("DELETE FROM login_fails WHERE name_key = :k", k=key)
-    session.permanent = True
-    session["uid"] = r[0]["id"]
+    login_user(g["id"], r[0]["id"])
     return jsonify({"ok": True})
 
 
 @app.post("/api/salir")
 def api_salir():
-    session.pop("uid", None)
+    logout_user(body_group()["id"])
     return jsonify({"ok": True})
 
 
 @app.post("/api/perfil")
 def api_perfil():
-    me = current_user()
+    me = current_user(body_group())
     if not me:
         return err("Tenés que entrar primero", 401)
     icon = str(body().get("icon", ""))
@@ -388,7 +496,7 @@ def api_perfil():
 
 @app.post("/api/pronostico")
 def api_pronostico():
-    me = current_user()
+    me = current_user(body_group())
     if not me:
         return err("Tenés que entrar primero", 401)
     d = body()
@@ -575,7 +683,44 @@ def api_admin_usuario():
             return err("El PIN tiene que ser de 4 números")
         q("UPDATE users SET pin_hash=:p WHERE id=:id", p=generate_password_hash(pin), id=uid)
         # el nuevo PIN también desbloquea el nombre
-        q("DELETE FROM login_fails WHERE name_key = (SELECT name_key FROM users WHERE id=:id)", id=uid)
+        r = q("SELECT group_id, name_key FROM users WHERE id=:id", id=uid)
+        if r:
+            q("DELETE FROM login_fails WHERE name_key = :k", k=f"{r[0]['group_id']}:{r[0]['name_key']}")
+        return jsonify({"ok": True})
+    return err("Acción inválida")
+
+
+@app.post("/api/admin/grupo")
+def api_admin_grupo():
+    require_admin()
+    d = body()
+    act = d.get("action")
+    name = re.sub(r"\s+", " ", str(d.get("name", ""))).strip()
+    clave = str(d.get("clave", "")).strip() or None
+    if clave and len(clave) > 30:
+        return err("La clave puede tener hasta 30 letras")
+    if act in ("crear", "editar") and not 2 <= len(name) <= 30:
+        return err("El nombre del grupo tiene que tener entre 2 y 30 letras")
+    if act == "crear":
+        base = slugify(name)
+        slug, i = base, 2
+        while get_group(slug):
+            slug, i = f"{base}-{i}", i + 1
+        q("INSERT INTO groups (slug, name, clave, created_at) VALUES (:s, :n, :c, :t)",
+          s=slug, n=name, c=clave, t=stamp())
+        return jsonify({"ok": True, "slug": slug})
+    gid = int(d.get("group_id", 0))
+    if not q("SELECT 1 FROM groups WHERE id = :id", id=gid):
+        return err("Grupo inexistente", 404)
+    if act == "editar":
+        q("UPDATE groups SET name = :n, clave = :c WHERE id = :id", n=name, c=clave, id=gid)
+        return jsonify({"ok": True})
+    if act == "borrar":
+        if len(q("SELECT id FROM groups")) == 1:
+            return err("Tiene que quedar al menos un grupo")
+        q("DELETE FROM predictions WHERE user_id IN (SELECT id FROM users WHERE group_id = :g)", g=gid)
+        q("DELETE FROM users WHERE group_id = :g", g=gid)
+        q("DELETE FROM groups WHERE id = :g", g=gid)
         return jsonify({"ok": True})
     return err("Acción inválida")
 

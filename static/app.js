@@ -2,12 +2,13 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const CSRF = $('meta[name="csrf"]')?.content || '';
+  const GROUP = $('meta[name="group"]')?.content || '';
 
   async function api(path, data) {
     const r = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF': CSRF },
-      body: JSON.stringify(data || {}),
+      body: JSON.stringify({ group: GROUP, ...(data || {}) }),
     });
     let j = {};
     try { j = await r.json(); } catch (_) { /* respuesta sin JSON */ }
@@ -76,7 +77,10 @@
       }
     });
   }
-  bindForm('#form-nuevo', '/api/registro', () => ({ icon: $('#icon-pick .ic.on')?.dataset.icon }));
+  bindForm('#form-nuevo', '/api/registro', () => ({
+    icon: $('#icon-pick .ic.on')?.dataset.icon,
+    clave: $('#form-nuevo input[name=clave]')?.value || '',
+  }));
   bindForm('#form-volver', '/api/ingresar');
 
   // ---------------------------------------------------------------- menú del usuario
@@ -204,12 +208,33 @@
     }
   });
 
+  const newGroup = $('#form-grupo');
+  if (newGroup) newGroup.addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      await api('/api/admin/grupo', { action: 'crear', name: newGroup.name.value, clave: newGroup.clave.value });
+      toast('Grupo creado');
+      setTimeout(() => location.reload(), 600);
+    } catch (err) { toast(err.message, true); }
+  });
+
   $$('.admin-row').forEach(row => row.addEventListener('click', async e => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
-    const id = +row.dataset.id, uid = +row.dataset.uid;
+    const id = +row.dataset.id, uid = +row.dataset.uid, gid = +row.dataset.gid;
     try {
       switch (b.dataset.act) {
+        case 'save-group':
+          await api('/api/admin/grupo', { action: 'editar', group_id: gid,
+            name: $('.g-name', row).value, clave: $('.g-clave', row).value });
+          break;
+        case 'delete-group':
+          if (!confirm('¿Borrar este grupo con todos sus participantes y pronósticos? No se puede deshacer.')) return;
+          await api('/api/admin/grupo', { action: 'borrar', group_id: gid });
+          break;
+        case 'copy-link':
+          await navigator.clipboard.writeText(location.origin + b.dataset.link);
+          return toast('Link copiado');
         case 'save-result': {
           const ga = $('[data-g=a]', row).value, gb = $('[data-g=b]', row).value;
           if (ga === '' || gb === '') return toast('Cargá los dos marcadores', true);

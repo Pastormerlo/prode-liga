@@ -3,15 +3,17 @@
 {% block body %}
 <header class="top">
   <div class="wrap top-in">
-    <a class="brand" href="/">
+    <a class="brand" href="{{ url_for('grupo', slug=g.slug) }}">
       <span class="brand-ball">⚽</span>
-      <span><strong>{{ t.TITULO }}</strong><small>{{ t.SUBTITULO }}</small></span>
+      <span><strong>{{ t.TITULO }}</strong><small>{% if n_groups > 1 %}Grupo {{ g.name }}{% else %}{{ t.SUBTITULO }}{% endif %}</small></span>
     </a>
     <div class="top-right">
       {% if me %}
       <button class="me-chip" id="btn-me" aria-haspopup="true">
         <span class="me-icon">{{ me.icon }}</span><span class="me-name">{{ me.name }}</span>
       </button>
+      {% elif n_groups > 1 %}
+      <a class="btn sm ghost" href="/?todos=1">Grupos</a>
       {% endif %}
     </div>
   </div>
@@ -36,6 +38,7 @@
   <div class="icons small">
     {% for ic in t.ICONS %}<button type="button" class="ic{% if ic == me.icon %} on{% endif %}" data-set-icon="{{ ic }}">{{ ic }}</button>{% endfor %}
   </div>
+  {% if n_groups > 1 %}<a class="btn ghost full" href="/?todos=1">Ver otros grupos</a>{% endif %}
   <button class="btn ghost full" id="btn-logout">Salir de esta cuenta</button>
 </div>
 {% endif %}
@@ -51,8 +54,11 @@
       <button data-join="volver">Ya me anoté</button>
     </div>
     <form id="form-nuevo" class="join-form" autocomplete="off">
-      <h2>Sumate al prode</h2>
+      <h2>Sumate {% if n_groups > 1 %}al grupo {{ g.name }}{% else %}al prode{% endif %}</h2>
       <p class="muted">Poné tu nombre, elegí un ícono y un PIN de 4 números. Con eso entrás desde cualquier celular.</p>
+      {% if g.clave %}
+      <label>Clave del grupo<input name="clave" maxlength="30" required placeholder="Te la pasa quien armó el grupo" autocomplete="off"></label>
+      {% endif %}
       <label>Tu nombre<input name="name" maxlength="20" required placeholder="Ej: Mauro" autocomplete="nickname"></label>
       <span class="lbl">Tu ícono</span>
       <div class="icons" id="icon-pick">
@@ -224,7 +230,9 @@
 
 <!-- ======================= TABLA ======================= -->
 <section id="tab-tabla" class="tab-panel" hidden>
-  {% if tabla %}
+  {% if not can_view %}
+  <div class="card empty">🔒 Este grupo tiene clave. Anotate o entrá con tu PIN para ver la tabla.</div>
+  {% elif tabla %}
   <div class="card table-card">
     <table class="standings">
       <thead><tr><th>#</th><th class="l">Jugador</th><th title="Resultados exactos">Ex</th><th title="Aciertos de quién pasa">Pasa</th><th>Pts</th></tr></thead>
