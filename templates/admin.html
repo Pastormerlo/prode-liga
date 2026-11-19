@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, tname %}
+{% block title %}Admin · {{ t.TITULO }}{% endblock %}
+{% block body %}
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/"><span class="brand-ball">⚽</span><span><strong>Admin</strong><small>{{ t.TITULO }}</small></span></a>
+    <div class="top-right">
+      <a class="btn sm ghost" href="/">Ver prode</a>
+      <a class="btn sm ghost" href="/admin/salir">Salir</a>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <div class="card">
+    <h2>Resultados desde Promiedos</h2>
+    <p class="muted">Se actualizan solos cada 30 minutos. Con el botón lo forzás ahora.</p>
+    <button class="btn primary" id="btn-sync">↻ Traer resultados</button>
+    <p class="small muted" id="sync-msg">{% if last_sync %}Última lectura: {{ last_sync[:16] }} — {{ last_sync_msg }}{% else %}Todavía no se leyó nunca.{% endif %}</p>
+  </div>
+
+  <div class="card">
+    <h2>Partidos</h2>
+    <p class="muted">Cargar un resultado a mano lo deja fijo (Promiedos no lo pisa). "Liberar" lo devuelve al modo automático.
+      Las horas de cuartos, semis y final se toman de Promiedos cuando las publica; podés fijarlas vos.</p>
+    <div class="admin-list">
+    {% for m in matches %}
+      <div class="admin-row" data-id="{{ m.id }}">
+        <div class="ar-title">
+          <strong>P{{ m.id }}</strong> · {{ m.round_name }}
+          {% if m.review %}<span class="chip live" title="{{ m.review }}">⚠ revisar</span>{% endif %}
+          {% if m.result_manual %}<span class="chip">manual</span>{% endif %}
+          <span class="chip ghost">{{ m.status }}</span>
+        </div>
+        <div class="ar-teams">
+          {{ badge(m.team_a, 'xs') }} {{ tname(m,'a') }}
+          <input type="number" min="0" max="20" class="g" data-g="a" value="{{ m.goals_a if m.goals_a is not none }}" {% if not m.ready %}disabled{% endif %}>
+          :
+          <input type="number" min="0" max="20" class="g" data-g="b" value="{{ m.goals_b if m.goals_b is not none }}" {% if not m.ready %}disabled{% endif %}>
+          {{ tname(m,'b') }} {{ badge(m.team_b, 'xs') }}
+        </div>
+        <div class="ar-ctrl">
+          <label class="small">Si empató, pasa:
+            <select class="adv" {% if not m.ready %}disabled{% endif %}>
+              <option value="">—</option>
+              <option value="a" {% if m.advance == 'a' %}selected{% endif %}>{{ tname(m,'a') }}</option>
+              <option value="b" {% if m.advance == 'b' %}selected{% endif %}>{{ tname(m,'b') }}</option>
+            </select>
+          </label>
+          <button class="btn sm primary" data-act="save-result" {% if not m.ready %}disabled{% endif %}>Guardar resultado</button>
+          <button class="btn sm ghost" data-act="clear-result">Liberar</button>
+        </div>
+        <div class="ar-ctrl">
+          <label class="small">Inicio (hora AR):
+            <input type="datetime-local" class="ko" value="{{ m.kickoff.replace(' ', 'T') if m.kickoff }}">
+          </label>
+          <button class="btn sm ghost" data-act="save-ko">Guardar hora</button>
+          {% if m.kickoff_manual %}<span class="chip">hora fija</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Participantes ({{ users|length }})</h2>
+    <div class="admin-list">
+    {% for u in users %}
+      <div class="admin-row user" data-uid="{{ u.id }}">
+        <span>{{ u.icon }} <strong>{{ u.name }}</strong> <span class="muted small">· {{ u.n }} pronósticos</span></span>
+        <span class="ar-ctrl">
+          <button class="btn sm ghost" data-act="reset-pin">Nuevo PIN</button>
+          <button class="btn sm danger" data-act="delete-user">Borrar</button>
+        </span>
+      </div>
+    {% else %}
+      <p class="muted">Nadie todavía.</p>
+    {% endfor %}
+    </div>
+  </div>
+</main>
+{% endblock %}

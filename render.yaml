@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: prode-liga
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 60
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SYNC_TOKEN
+        generateValue: true
+      - key: ADMIN_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: prode-liga-db
+          property: connectionString
+
+databases:
+  - name: prode-liga-db
+    plan: free

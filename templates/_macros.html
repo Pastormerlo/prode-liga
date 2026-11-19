@@ -1,0 +1,18 @@
+{% macro badge(team, size='') -%}
+{%- if team -%}
+<span class="badge {{ size }}" style="--c1:{{ team.c1 }};--c2:{{ team.c2 }}" aria-hidden="true">{{ team.abbr }}</span>
+{%- else -%}
+<span class="badge tbd {{ size }}" aria-hidden="true">?</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro tname(m, side) -%}
+{%- set tm = m['team_' ~ side] -%}
+{{ tm.short if tm else m['label_' ~ side] }}
+{%- endmacro %}
+
+{% macro pts_chip(s) -%}
+{%- if s -%}
+<span class="chip pts p{{ s.pts }}" title="{{ 'Exacto' if s.exacto else '' }}">+{{ s.pts }}</span>
+{%- endif -%}
+{%- endmacro %}

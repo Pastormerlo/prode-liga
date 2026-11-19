@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Admin · {{ t.TITULO }}{% endblock %}
+{% block body %}
+<main class="wrap narrow">
+  <div class="card join">
+    <form method="post" class="join-form">
+      <h2>Panel de admin</h2>
+      <p class="muted">Ingresá la clave de administrador (la variable ADMIN_KEY de Render).</p>
+      <label>Clave<input type="password" name="key" required autofocus autocomplete="current-password"></label>
+      <button class="btn primary full">Entrar</button>
+      {% if error %}<p class="form-msg err">{{ error }}</p>{% endif %}
+      <p><a href="/">← Volver al prode</a></p>
+    </form>
+  </div>
+</main>
+{% endblock %}
