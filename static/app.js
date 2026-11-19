@@ -149,6 +149,7 @@
         await api('/api/pronostico', { match_id: +card.dataset.id, goals_a: a, goals_b: b, advance: a === b ? adv : null });
         save.hidden = true;
         msg.textContent = '✓ Guardado';
+        msg.classList.remove('pop'); void msg.offsetWidth; msg.classList.add('pop');
         card.classList.remove('dirty', 'needs');
         toast('Pronóstico guardado');
         updatePending();
@@ -265,4 +266,103 @@
       toast(err.message, true);
     }
   }));
+  // ---------------------------------------------------------------- festejos
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
+  };
+
+  function confetti(gold) {
+    if (calm) return;
+    const cv = document.createElement('canvas');
+    cv.className = 'confetti';
+    document.body.appendChild(cv);
+    const ctx = cv.getContext('2d');
+    const W = cv.width = innerWidth, H = cv.height = innerHeight;
+    const colors = gold ? ['#f5c542', '#ffe08a', '#fff4cc', '#d9a520'] : ['#6cc4f5', '#ffffff', '#f5c542', '#2f8fd0', '#ff5d6c'];
+    const ps = Array.from({ length: gold ? 220 : 160 }, () => ({
+      x: W / 2 + (Math.random() - .5) * W * .3, y: H * .35,
+      vx: (Math.random() - .5) * 14, vy: -Math.random() * 15 - 5,
+      w: 6 + Math.random() * 6, h: 8 + Math.random() * 8,
+      r: Math.random() * 6, vr: (Math.random() - .5) * .3,
+      c: colors[Math.floor(Math.random() * colors.length)],
+    }));
+    const t0 = performance.now();
+    (function frame(t) {
+      ctx.clearRect(0, 0, W, H);
+      ps.forEach(p => {
+        p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+        ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.cos(p.r * 2));
+        ctx.restore();
+      });
+      if (t - t0 < 4500) requestAnimationFrame(frame); else cv.remove();
+    })(t0);
+  }
+
+  function celebrate(emoji, title, items, gold) {
+    const box = $('#celebrate');
+    $('#cel-emoji').textContent = emoji;
+    $('#cel-title').textContent = title;
+    const ul = $('#cel-list');
+    ul.replaceChildren(...items.map(([txt, pts]) => {
+      const li = document.createElement('li');
+      const a = document.createElement('span'); a.textContent = txt;
+      li.appendChild(a);
+      if (pts) { const b = document.createElement('span'); b.className = 'chip pts p' + pts; b.textContent = '+' + pts; li.appendChild(b); }
+      return li;
+    }));
+    box.classList.toggle('gold', !!gold);
+    box.hidden = false;
+    requestAnimationFrame(() => box.classList.add('show'));
+    return new Promise(res => {
+      const close = () => { box.classList.remove('show'); setTimeout(() => (box.hidden = true), 250); res(); };
+      $('#cel-ok').onclick = close;
+      box.onclick = e => { if (e.target === box) close(); };
+    });
+  }
+
+  const festEl = $('#fest');
+  if (festEl) (async () => {
+    const F = JSON.parse(festEl.textContent);
+    const K = 'prode-fest-' + F.key;
+    const saved = store.get(K);
+    const state = saved || { seen: [], pos: null, prev: null, champ: false };
+
+    // flechita de puestos en la tabla
+    if (F.pos != null) {
+      if (state.pos != null && state.pos !== F.pos) { state.prev = state.pos; }
+      state.pos = F.pos;
+      const mv = $('#my-move');
+      if (mv && state.prev != null && state.prev !== F.pos) {
+        const d = state.prev - F.pos;
+        mv.textContent = (d > 0 ? '▲' : '▼') + Math.abs(d);
+        mv.className = 'move ' + (d > 0 ? 'up' : 'down');
+        mv.title = d > 0 ? `Subiste ${d} puesto${d > 1 ? 's' : ''}` : `Bajaste ${-d} puesto${d < -1 ? 's' : ''}`;
+        mv.hidden = false;
+      }
+    }
+
+    // la primera vez en este celular no se festeja lo viejo
+    const fresh = saved ? F.hits.filter(h => !state.seen.includes(h.id)) : [];
+    state.seen = F.hits.map(h => h.id);
+    const champNow = F.champ && !state.champ;
+    state.champ = state.champ || F.champ;
+    store.set(K, state);
+
+    if (fresh.length && $('#celebrate')) {
+      const exactos = fresh.filter(h => h.exacto).length;
+      const total = fresh.reduce((a, h) => a + h.pts, 0);
+      const title = exactos ? (exactos > 1 ? `¡${exactos} exactos!` : '¡Clavaste el resultado!') : `¡Sumaste ${total} punto${total > 1 ? 's' : ''}!`;
+      if (exactos) confetti(false);
+      await celebrate(exactos ? '🎯' : '👏', title, fresh.map(h => [(h.exacto ? 'Exacto · ' : '') + h.txt, h.pts]));
+    }
+    if (champNow && $('#celebrate')) {
+      confetti(true);
+      setTimeout(() => confetti(true), 900);
+      await celebrate('🏆', '¡Campeón del prode!', [[`Terminaste 1° del grupo · campeón ${F.champ_team || ''}`.trim(), 0]], true);
+    }
+  })();
+
 })();

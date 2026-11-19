@@ -380,11 +380,26 @@ def grupo(slug):
         rounds.append({"key": key, "name": name, "when": when, "matches": ms})
 
     pending = sum(1 for m in matches.values() if m["open"] and not m.get("mine"))
+    my_row = next((r for r in tabla if me and r["id"] == me["id"]), None)
+
+    # datos para los festejos (el navegador recuerda qué ya se festejó)
+    fest = None
+    if me:
+        hits = []
+        for m in matches.values():
+            s = m.get("mine_score")
+            if s:
+                hits.append({"id": m["id"], "pts": s["pts"], "exacto": s["exacto"],
+                             "txt": f"{m['team_a']['short']} {m['goals_a']}-{m['goals_b']} {m['team_b']['short']}"})
+        f = matches[15]
+        champ = f["final"] and my_row and my_row["pos"] == 1 and my_row["pts"] > 0
+        fest = {"key": f"{g['id']}-{me['id']}", "hits": hits, "pos": my_row["pos"] if my_row else None,
+                "champ": bool(champ), "champ_team": f["team_" + f["advance"]]["short"] if f["final"] else None}
     return render_template(
         "index.html", t=torneo, g=g, me=me, admin=admin, can_view=can_view, rounds=rounds,
         tabla=tabla, matches=matches, pending=pending, csrf=csrf_token(),
-        n_groups=len(q("SELECT id FROM groups")),
-        last_sync=get_meta("last_sync"), my_row=next((r for r in tabla if me and r["id"] == me["id"]), None),
+        n_groups=len(q("SELECT id FROM groups")), fest=fest,
+        last_sync=get_meta("last_sync"), my_row=my_row,
     )
 
 

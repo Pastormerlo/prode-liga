@@ -240,7 +240,7 @@
       {% for r in tabla %}
         <tr class="{% if me and r.id == me.id %}me{% endif %}">
           <td class="pos">{% if r.pts and r.pos == 1 %}🥇{% elif r.pts and r.pos == 2 %}🥈{% elif r.pts and r.pos == 3 %}🥉{% else %}{{ r.pos }}{% endif %}</td>
-          <td class="l"><span class="t-icon">{{ r.icon }}</span>{{ r.name }}</td>
+          <td class="l"><span class="t-icon">{{ r.icon }}</span>{{ r.name }}{% if me and r.id == me.id %}<span class="move" id="my-move" hidden></span>{% endif %}</td>
           <td>{{ r.exactos }}</td>
           <td>{{ r.pasa }}</td>
           <td class="t-pts">{{ r.pts }}</td>
@@ -279,5 +279,14 @@
 </section>
 
 </main>
+{% if fest %}<script id="fest" type="application/json">{{ fest|tojson }}</script>{% endif %}
+<div class="celebrate" id="celebrate" hidden>
+  <div class="cel-card" role="dialog" aria-modal="true" aria-labelledby="cel-title">
+    <div class="cel-emoji" id="cel-emoji">🎉</div>
+    <h2 id="cel-title"></h2>
+    <ul id="cel-list"></ul>
+    <button class="btn primary full" id="cel-ok">¡Vamos!</button>
+  </div>
+</div>
 <footer class="wrap foot muted">Resultados: Promiedos · Para los partidos</footer>
 {% endblock %}
