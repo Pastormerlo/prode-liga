@@ -304,3 +304,9 @@ input.pin { letter-spacing: 10px; font-family: var(--cond); font-size: 22px; tex
 /* barra de admin (solo la ve el admin) */
 .adminbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; }
 .adminbar .chip { color: var(--gold); border-color: rgba(245,197,66,.4); }
+
+/* escudos reales */
+.crest { width: 50px; height: 50px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
+.crest.xs { width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.is-final .team:not(.won) .crest { filter: grayscale(.6) drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
+@media (max-width: 520px) { .crest { width: 46px; height: 46px; } }

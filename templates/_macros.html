@@ -1,6 +1,7 @@
 {% macro badge(team, size='') -%}
 {%- if team -%}
-<span class="badge {{ size }}" style="--c1:{{ team.c1 }};--c2:{{ team.c2 }}" aria-hidden="true">{{ team.abbr }}</span>
+<img class="crest {{ size }}" src="{{ url_for('static', filename='escudos/' ~ team.key ~ '.png') }}" alt="" aria-hidden="true"
+     onerror="this.outerHTML=this.nextElementSibling.innerHTML"><template><span class="badge {{ size }}" style="--c1:{{ team.c1 }};--c2:{{ team.c2 }}" aria-hidden="true">{{ team.abbr }}</span></template>
 {%- else -%}
 <span class="badge tbd {{ size }}" aria-hidden="true">?</span>
 {%- endif -%}
