@@ -150,8 +150,8 @@
           <div class="tie"{% if not (mine and not m.mine_stale and mine.goals_a == mine.goals_b) %} hidden{% endif %}>
             <span>Empate en los 90'. ¿Quién pasa?</span>
             <div class="tie-opts">
-              <button type="button" data-adv="a" class="{% if mine and mine.advance == 'a' and not m.mine_stale %}on{% endif %}">{{ tname(m,'a') }}</button>
-              <button type="button" data-adv="b" class="{% if mine and mine.advance == 'b' and not m.mine_stale %}on{% endif %}">{{ tname(m,'b') }}</button>
+              <button type="button" data-adv="a" class="{% if mine and mine.goals_a == mine.goals_b and mine.advance == 'a' and not m.mine_stale %}on{% endif %}">{{ tname(m,'a') }}</button>
+              <button type="button" data-adv="b" class="{% if mine and mine.goals_a == mine.goals_b and mine.advance == 'b' and not m.mine_stale %}on{% endif %}">{{ tname(m,'b') }}</button>
             </div>
           </div>
           <div class="m-actions">

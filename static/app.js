@@ -113,7 +113,13 @@
     }
     function refreshTie() {
       const [a, b] = vals();
-      tie.hidden = !(a !== null && b !== null && a === b);
+      const isTie = a !== null && b !== null && a === b;
+      // al pasar a empate, nadie viene marcado: hay que elegir quién pasa
+      if (isTie && tie.hidden) {
+        adv = null;
+        $$('.tie-opts button', card).forEach(x => x.classList.toggle('on', false));
+      }
+      tie.hidden = !isTie;
     }
     $$('.stepper', card).forEach(st => {
       const inp = $('input', st);
